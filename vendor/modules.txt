@@ -1,0 +1,12 @@
+# github.com/aws/aws-lambda-go v1.23.0
+## explicit
+github.com/aws/aws-lambda-go/lambda
+github.com/aws/aws-lambda-go/lambda/handlertrace
+github.com/aws/aws-lambda-go/lambda/messages
+github.com/aws/aws-lambda-go/lambdacontext
+# github.com/rs/zerolog v1.20.0
+## explicit
+github.com/rs/zerolog
+github.com/rs/zerolog/internal/cbor
+github.com/rs/zerolog/internal/json
+github.com/rs/zerolog/log

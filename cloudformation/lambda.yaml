@@ -1,0 +1,138 @@
+---
+Description: Lambda description goes here
+
+Parameters:
+
+  ArtifactBucket:
+    Description: The bucket location of the Lambda artifact
+    Type: String
+
+  Environment:
+    Description: The name of the environment
+    Type: String
+    Default: dev
+
+  Prefix:
+    Description: Group this lambda with other aws resources using a prefix
+    Type: String
+
+Resources:
+
+  LambdaFunction:
+    DependsOn:
+      - LambdaLogGroup
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${Prefix}-api-${Environment}
+      MemorySize: 256
+      Handler: app
+      TracingConfig:
+        Mode: Active
+      Timeout: 300
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+      Role: !GetAtt LambdaServiceRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactBucket
+        S3Key: !Sub "${Hash}/app.zip"
+      Runtime: go1.x
+
+  LambdaServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+      Policies:
+        - PolicyName: !Ref 'AWS::StackName'
+          PolicyDocument:
+            Statement:
+              - Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: "*"
+              - Action:
+                  - iam:PassRole
+                Effect: Allow
+                Resource: "*"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${Prefix}-api-${Environment}
+
+  # Alarms
+
+  LambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub Long Lambda duration for task ${Environment}
+      AlarmActions:
+        - Fn::ImportValue: !Sub alerts-topic-${Environment}
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: Maximum
+      Period: 600
+      EvaluationPeriods: 1
+      Threshold: 15000 # 15s
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref LambdaFunction
+
+  LambdaInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub High invocation count for task ${Environment}
+      AlarmActions:
+        - Fn::ImportValue: !Sub alerts-topic-${Environment}
+      MetricName: Invocations
+      Namespace: AWS/Lambda
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 300
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref LambdaFunction
+
+  LambdaThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub Throttling detected for task ${Environment}
+      AlarmActions:
+        - Fn::ImportValue: !Sub alerts-topic-${Environment}
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref LambdaFunction
+
+Outputs:
+
+  LambdaFunctionArn:
+    Description: The lambda function ARN
+    Value: !GetAtt LambdaFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-lambda-arn"
